@@ -261,9 +261,9 @@ def reset_game():
 
 def save_score():
     global player_name, app_no, score
-    file_exists = os.path.isfile('high_scores.csv')
+    file_exists = os.path.isfile('scores.csv')
     try:
-        with open('high_scores.csv', 'a', newline='') as csvfile:
+        with open('scores.csv', 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
             if not file_exists:
                 writer.writerow(['Player Name', 'Application No.', 'Score'])
