@@ -22,9 +22,7 @@ GET_PLAYER_NAMES = 1
 TURN_TRANSITION = 2
 GAME_PLAYING = 3
 GAME_OVER = 4
-
 pygame.init()
-
 infoObject = pygame.display.Info()
 FULL_SCREEN_WIDTH = infoObject.current_w
 FULL_SCREEN_HEIGHT = infoObject.current_h
