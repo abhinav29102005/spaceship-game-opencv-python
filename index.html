@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spaceship Gesture Control Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: white;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 0 0 20px #00ff00;
+        }
+
+        #gameCanvas {
+            border: 3px solid #00ff00;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+            background: black;
+            display: block;
+        }
+
+        #videoCanvas {
+            position: absolute;
+            top: 80px;
+            right: 30px;
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            display: none;
+        }
+
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        #menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 15px;
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 40px rgba(0, 255, 0, 0.5);
+            text-align: center;
+            z-index: 100;
+        }
+
+        .menu-button {
+            background: linear-gradient(135deg, #00ff00 0%, #00cc00 100%);
+            color: black;
+            border: none;
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .menu-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            font-size: 1.1rem;
+            margin: 10px 0;
+            width: 300px;
+            border: 2px solid #00ff00;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border-radius: 5px;
+        }
+
+        #cameraToggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 255, 0, 0.2);
+            border: 2px solid #00ff00;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 50;
+        }
+
+        #cameraToggle:hover {
+            background: rgba(0, 255, 0, 0.4);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            z-index: 200;
+        }
+
+        .spinner {
+            border: 4px solid rgba(0, 255, 0, 0.3);
+            border-top: 4px solid #00ff00;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="hidden">
+        <div>Loading MediaPipe...</div>
+        <div class="spinner"></div>
+    </div>
+
+    <button id="cameraToggle">📹 Toggle Camera</button>
+
+    <div id="container">
+        <h1>🚀 Spaceship Gesture Control</h1>
+        
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <canvas id="videoCanvas" width="240" height="180"></canvas>
+        
+        <div id="controls">
+            <strong>Keyboard:</strong> Arrow Keys/AD: Move | Space: Shoot | P: Power-up | Q: Quit
+            <br>
+            <strong>Gestures:</strong> Move hand left/right | Thumb+Index: Shoot | Fist: Power-up
+        </div>
+
+        <div id="menu">
+            <h2>Select Number of Players</h2>
+            <div id="playerSelection">
+                <button class="menu-button" onclick="selectPlayers(1)">1 Player</button>
+                <button class="menu-button" onclick="selectPlayers(2)">2 Players</button>
+                <button class="menu-button" onclick="selectPlayers(3)">3 Players</button>
+                <button class="menu-button" onclick="selectPlayers(4)">4 Players</button>
+            </div>
+            <div id="nameInput" class="hidden"></div>
+        </div>
+    </div>
+
+    <!-- MediaPipe Hand Tracking -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+    <script>
+        // Game constants
+        const GAME_STATES = {
+            MENU: 'menu',
+            NAME_INPUT: 'name_input',
+            TURN_TRANSITION: 'turn_transition',
+            PLAYING: 'playing',
+            GAME_OVER: 'game_over'
+        };
+
+        // Game state
+        let gameState = GAME_STATES.MENU;
+        let numPlayers = 0;
+        let players = [];
+        let currentPlayerIndex = 0;
+        let inputName = '';
+        let gameTimer = 0;
+        let gameStartTime = 0;
+        const GAME_DURATION = 30000; // 30 seconds
+
+        // Canvas setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const videoCanvas = document.getElementById('videoCanvas');
+        const videoCtx = videoCanvas.getContext('2d');
+
+        // Game objects
+        let player = null;
+        let projectiles = [];
+        let enemies = [];
+        let whiteCircles = [];
+        let lastEnemySpawn = 0;
+        let lastCircleSpawn = 0;
+        let enemySpawnDelay = 1000;
+        let circleSpawnDelay = 2000;
+
+        // Input state
+        let keys = {};
+        let handX = null;
+        let gestureShoot = false;
+        let gesturePowerUp = false;
+        let prevThumbIndexClose = false;
+
+        // Camera state
+        let cameraEnabled = false;
+        let camera = null;
+        let hands = null;
+        let handLandmarks = null;
+
+        // Player class
+        class Player {
+            constructor() {
+                this.x = canvas.width / 2;
+                this.y = canvas.height - 50;
+                this.width = 50;
+                this.height = 50;
+                this.velocityX = 0;
+                this.acceleration = 0.5;
+                this.maxSpeed = 8;
+                this.lastShot = 0;
+                this.fireRate = 300;
+                this.powerUpActive = false;
+                this.powerUpStart = 0;
+                this.powerUpDuration = 5000;
+            }
+
+            update(targetX) {
+                if (targetX !== null) {
+                    if (targetX < this.x - 20) {
+                        this.velocityX -= this.acceleration;
+                    } else if (targetX > this.x + 20) {
+                        this.velocityX += this.acceleration;
+                    } else {
+                        this.velocityX *= 0.95;
+                    }
+                } else {
+                    this.velocityX *= 0.95;
+                }
+
+                this.velocityX = Math.max(-this.maxSpeed, Math.min(this.velocityX, this.maxSpeed));
+                this.x += this.velocityX;
+                this.x = Math.max(25, Math.min(this.x, canvas.width - 25));
+
+                if (this.powerUpActive && Date.now() - this.powerUpStart > this.powerUpDuration) {
+                    this.powerUpActive = false;
+                }
+            }
+
+            shoot() {
+                const now = Date.now();
+                const rate = this.powerUpActive ? this.fireRate / 2 : this.fireRate;
+                if (now - this.lastShot > rate) {
+                    projectiles.push(new Projectile(this.x, this.y));
+                    this.lastShot = now;
+                }
+            }
+
+            activatePowerUp() {
+                if (!this.powerUpActive) {
+                    this.powerUpActive = true;
+                    this.powerUpStart = Date.now();
+                }
+            }
+
+            draw() {
+                const color = this.powerUpActive ? '#ffff00' : '#0088ff';
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 25);
+                ctx.lineTo(this.x - 25, this.y + 25);
+                ctx.lineTo(this.x, this.y + 15);
+                ctx.lineTo(this.x + 25, this.y + 25);
+                ctx.closePath();
+                ctx.fill();
+
+                if (Math.abs(this.velocityX) > 0.5) {
+                    ctx.fillStyle = '#ff4444';
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y + 20);
+                    ctx.lineTo(this.x - 10, this.y + 35);
+                    ctx.lineTo(this.x + 10, this.y + 35);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Projectile class
+        class Projectile {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 5;
+                this.height = 15;
+                this.speed = 10;
+            }
+
+            update() {
+                this.y -= this.speed;
+            }
+
+            draw() {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(this.x - 2.5, this.y - 7.5, this.width, this.height);
+            }
+
+            isOffScreen() {
+                return this.y < 0;
+            }
+        }
+
+        // Enemy class
+        class Enemy {
+            constructor() {
+                this.x = Math.random() * (canvas.width - 80) + 40;
+                this.y = 0;
+                this.width = 40;
+                this.height = 40;
+                this.speed = Math.random() * 3 + 1;
+            }
+
+            update() {
+                this.y += this.speed;
+            }
+
+            draw() {
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(this.x - 20, this.y - 20, this.width, this.height);
+            }
+
+            isOffScreen() {
+                return this.y > canvas.height;
+            }
+        }
+
+        // WhiteCircle class
+        class WhiteCircle {
+            constructor() {
+                this.x = Math.random() * (canvas.width - 80) + 40;
+                this.y = 0;
+                this.radius = 20;
+                this.speed = Math.random() * 3 + 2;
+            }
+
+            update() {
+                this.y += this.speed;
+            }
+
+            draw() {
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            isOffScreen() {
+                return this.y > canvas.height;
+            }
+        }
+
+        // Initialize MediaPipe Hands
+        function initMediaPipe() {
+            document.getElementById('loading').classList.remove('hidden');
+            
+            hands = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+
+            hands.onResults(onHandsResults);
+
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        // MediaPipe results handler
+        function onHandsResults(results) {
+            videoCtx.save();
+            videoCtx.clearRect(0, 0, videoCanvas.width, videoCanvas.height);
+            videoCtx.drawImage(results.image, 0, 0, videoCanvas.width, videoCanvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                handLandmarks = results.multiHandLandmarks[0];
+                
+                // Draw landmarks
+                drawConnectors(videoCtx, handLandmarks, HAND_CONNECTIONS, {color: '#00ff00', lineWidth: 2});
+                drawLandmarks(videoCtx, handLandmarks, {color: '#ff0000', lineWidth: 1});
+
+                // Process gestures
+                processGestures();
+            } else {
+                handLandmarks = null;
+                handX = null;
+            }
+
+            videoCtx.restore();
+        }
+
+        // Process hand gestures
+        function processGestures() {
+            if (!handLandmarks) return;
+
+            // Get wrist position for movement
+            const wrist = handLandmarks[0];
+            handX = wrist.x * canvas.width;
+
+            // Check for thumb-index tap (shoot)
+            const thumbTip = handLandmarks[4];
+            const indexTip = handLandmarks[8];
+            const distance = Math.sqrt(
+                Math.pow(thumbTip.x - indexTip.x, 2) + 
+                Math.pow(thumbTip.y - indexTip.y, 2)
+            );
+            const isClose = distance < 0.08;
+
+            if (isClose && !prevThumbIndexClose) {
+                gestureShoot = true;
+            }
+            prevThumbIndexClose = isClose;
+
+            // Check for fist (power-up)
+            const indexMCP = handLandmarks[5];
+            const middleMCP = handLandmarks[9];
+            const ringMCP = handLandmarks[13];
+            const pinkyMCP = handLandmarks[17];
+
+            const indexFinger = handLandmarks[8];
+            const middleFinger = handLandmarks[12];
+            const ringFinger = handLandmarks[16];
+            const pinkyFinger = handLandmarks[20];
+
+            const isFist = 
+                indexFinger.y > indexMCP.y &&
+                middleFinger.y > middleMCP.y &&
+                ringFinger.y > ringMCP.y &&
+                pinkyFinger.y > pinkyMCP.y;
+
+            if (isFist) {
+                gesturePowerUp = true;
+            }
+        }
+
+        // Toggle camera
+        document.getElementById('cameraToggle').addEventListener('click', async () => {
+            cameraEnabled = !cameraEnabled;
+            
+            if (cameraEnabled) {
+                if (!hands) {
+                    initMediaPipe();
+                }
+                
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { width: 640, height: 480 } 
+                    });
+                    
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.play();
+
+                    camera = new Camera(video, {
+                        onFrame: async () => {
+                            await hands.send({image: video});
+                        },
+                        width: 640,
+                        height: 480
+                    });
+                    
+                    camera.start();
+                    videoCanvas.classList.remove('hidden');
+                } catch (err) {
+                    console.error('Camera error:', err);
+                    alert('Camera access denied. Use keyboard controls.');
+                    cameraEnabled = false;
+                }
+            } else {
+                if (camera) {
+                    camera.stop();
+                }
+                videoCanvas.classList.add('hidden');
+                handX = null;
+            }
+        });
+
+        // Menu functions
+        function selectPlayers(num) {
+            numPlayers = num;
+            players = [];
+            for (let i = 0; i < num; i++) {
+                players.push({ name: '', score: 0 });
+            }
+            currentPlayerIndex = 0;
+            gameState = GAME_STATES.NAME_INPUT;
+            showNameInput();
+        }
+
+        function showNameInput() {
+            const nameInputDiv = document.getElementById('nameInput');
+            nameInputDiv.innerHTML = `
+                <h3>Player ${currentPlayerIndex + 1}, enter your name:</h3>
+                <input type="text" id="nameField" maxlength="15" placeholder="Enter name">
+                <br>
+                <button class="menu-button" onclick="submitName()">Continue</button>
+            `;
+            nameInputDiv.classList.remove('hidden');
+            document.getElementById('playerSelection').classList.add('hidden');
+            
+            setTimeout(() => document.getElementById('nameField').focus(), 100);
+            
+            document.getElementById('nameField').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') submitName();
+            });
+        }
+
+        function submitName() {
+            const nameField = document.getElementById('nameField');
+            const name = nameField.value.trim();
+            
+            if (name) {
+                players[currentPlayerIndex].name = name;
+                currentPlayerIndex++;
+                
+                if (currentPlayerIndex < numPlayers) {
+                    showNameInput();
+                } else {
+                    currentPlayerIndex = 0;
+                    startTurnTransition();
+                }
+            }
+        }
+
+        function startTurnTransition() {
+            gameState = GAME_STATES.TURN_TRANSITION;
+            document.getElementById('menu').classList.add('hidden');
+            
+            setTimeout(() => {
+                startGame();
+            }, 2000);
+        }
+
+        function startGame() {
+            gameState = GAME_STATES.PLAYING;
+            player = new Player();
+            projectiles = [];
+            enemies = [];
+            whiteCircles = [];
+            gameStartTime = Date.now();
+            lastEnemySpawn = Date.now();
+            lastCircleSpawn = Date.now();
+            enemySpawnDelay = 1000;
+            circleSpawnDelay = 2000;
+        }
+
+        function endTurn() {
+            currentPlayerIndex++;
+            if (currentPlayerIndex >= numPlayers) {
+                gameState = GAME_STATES.GAME_OVER;
+            } else {
+                startTurnTransition();
+            }
+        }
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            if (gameState === GAME_STATES.PLAYING) {
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    player.shoot();
+                }
+                if (e.key.toLowerCase() === 'p') {
+                    player.activatePowerUp();
+                }
+            }
+            
+            if (e.key.toLowerCase() === 'q') {
+                location.reload();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Collision detection
+        function checkCollisions() {
+            // Projectile-enemy collisions
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const p = projectiles[i];
+                    const e = enemies[j];
+                    if (p && e &&
+                        p.x > e.x - 20 && p.x < e.x + 20 &&
+                        p.y > e.y - 20 && p.y < e.y + 20) {
+                        projectiles.splice(i, 1);
+                        enemies.splice(j, 1);
+                        players[currentPlayerIndex].score += 10;
+                        break;
+                    }
+                }
+            }
+
+            // Player-enemy collisions
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                if (Math.abs(player.x - e.x) < 35 && Math.abs(player.y - e.y) < 35) {
+                    endTurn();
+                    return;
+                }
+            }
+
+            // Player-white circle collisions
+            for (let i = whiteCircles.length - 1; i >= 0; i--) {
+                const c = whiteCircles[i];
+                const dist = Math.sqrt(Math.pow(player.x - c.x, 2) + Math.pow(player.y - c.y, 2));
+                if (dist < 35) {
+                    whiteCircles.splice(i, 1);
+                    players[currentPlayerIndex].score = Math.max(0, players[currentPlayerIndex].score - 10);
+                }
+            }
+        }
+
+        // Game loop
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === GAME_STATES.TURN_TRANSITION) {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${players[currentPlayerIndex].name}'s Turn!`, canvas.width / 2, canvas.height / 2);
+                ctx.font = '24px Arial';
+                ctx.fillText('Get Ready...', canvas.width / 2, canvas.height / 2 + 50);
+            }
+            else if (gameState === GAME_STATES.PLAYING) {
+                const now = Date.now();
+                const elapsed = now - gameStartTime;
+                const remaining = Math.max(0, Math.ceil((GAME_DURATION - elapsed) / 1000));
+
+                // Update player
+                let targetX = null;
+                if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+                    targetX = player.x - 10;
+                } else if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+                    targetX = player.x + 10;
+                } else if (handX !== null) {
+                    targetX = handX;
+                }
+                
+                player.update(targetX);
+
+                // Handle gestures
+                if (gestureShoot) {
+                    player.shoot();
+                    gestureShoot = false;
+                }
+                if (gesturePowerUp) {
+                    player.activatePowerUp();
+                    gesturePowerUp = false;
+                }
+
+                // Spawn enemies
+                if (now - lastEnemySpawn > enemySpawnDelay) {
+                    if (Math.random() > 0.5) {
+                        enemies.push(new Enemy());
+                    }
+                    lastEnemySpawn = now;
+                }
+
+                // Spawn white circles
+                if (now - lastCircleSpawn > circleSpawnDelay) {
+                    if (Math.random() > 0.7) {
+                        whiteCircles.push(new WhiteCircle());
+                    }
+                    lastCircleSpawn = now;
+                }
+
+                // Increase difficulty after 15 seconds
+                if (elapsed > 15000) {
+                    enemySpawnDelay = 500;
+                    circleSpawnDelay = 1000;
+                }
+
+                // Update and draw projectiles
+                projectiles = projectiles.filter(p => !p.isOffScreen());
+                projectiles.forEach(p => {
+                    p.update();
+                    p.draw();
+                });
+
+                // Update and draw enemies
+                enemies = enemies.filter(e => !e.isOffScreen());
+                enemies.forEach(e => {
+                    e.update();
+                    e.draw();
+                });
+
+                // Update and draw white circles
+                whiteCircles = whiteCircles.filter(c => !c.isOffScreen());
+                whiteCircles.forEach(c => {
+                    c.update();
+                    c.draw();
+                });
+
+                // Draw player
+                player.draw();
+
+                // Check collisions
+                checkCollisions();
+
+                // Draw HUD
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Player: ${players[currentPlayerIndex].name}`, 10, 30);
+                ctx.fillText(`Score: ${players[currentPlayerIndex].score}`, 10, 60);
+                ctx.fillStyle = remaining <= 5 ? '#ff0000' : '#ffffff';
+                ctx.fillText(`Time: ${remaining}s`, 10, 90);
+
+                if (player.powerUpActive) {
+                    ctx.fillStyle = '#ffff00';
+                    ctx.font = '32px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('POWER-UP!', canvas.width / 2, 40);
+                }
+
+                // Check time
+                if (remaining <= 0) {
+                    endTurn();
+                }
+            }
+            else if (gameState === GAME_STATES.GAME_OVER) {
+                ctx.fillStyle = '#ff0000';
+                ctx.font = '64px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, 150);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '32px Arial';
+                ctx.fillText('Final Scores:', canvas.width / 2, 220);
+
+                const sorted = [...players].sort((a, b) => b.score - a.score);
+                sorted.forEach((p, i) => {
+                    ctx.font = '24px Arial';
+                    ctx.fillText(`${i + 1}. ${p.name}: ${p.score}`, canvas.width / 2, 270 + i * 40);
+                });
+
+                ctx.fillStyle = '#ffff00';
+                ctx.font = '28px Arial';
+                ctx.fillText(`Winner: ${sorted[0].name}!`, canvas.width / 2, 450);
+
+                ctx.fillStyle = '#aaaaaa';
+                ctx.font = '20px Arial';
+                ctx.fillText('Press Q to play again', canvas.width / 2, 520);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game loop
+        gameLoop();
+    </script>
+</body>
+</html>
